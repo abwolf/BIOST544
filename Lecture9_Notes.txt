@@ -1,0 +1,9 @@
+Interval estiamtes —> the width of the dirstibution is robust, even if the true estimate of p is not accurate.
+
+Class 2 Inteval estimate —> pick range of p’s, calculate sampling distribution for this p, where in the tail does our pi-hat fall for this sampling distribution (w/in the 5-95 CI). Pick all the p’s where pi-hat falls within the 5-95CI of that pi —> this range of p’s becomes the interval range for pi. —> more exact measure of interval estimate because by re-calculating the sampling distribution for each p allows the shape/width of the distribution to change.
+
+Class 8 Interval estimate —> for pi-hat, calculate with sampling distribution, —> calcualte distance from pi-hat to 95CI, this becomes the lower distance for pi. Calculate distance from pi-hat to 5CI, this becomes the upper distance for pi.
+	— 95CI - pi-hat —> uppr.dist —> pi-hat - uppr.dist <= pi
+	— pi-hat - 5CI —> lwr.dist —> pi-hat + lwr.dist >= pi
+
+

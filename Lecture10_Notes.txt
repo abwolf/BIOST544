@@ -1,0 +1,43 @@
+bias of an estimator
+
+average absolute distance estimation —> average(|obs-median|)
+	—> we should be using the true median
+	—> we don’t have the true median however, so we are using the median in our sample
+	—> by using our sample median we are using a biased center that will minimize the average absolute distance
+True for any measure of scale for where you have to estimate the center
+
+We can then, after bootstrapping, compare the mean value of this distance measure to our initial sample value (which supposedly represents the population)
+	—> we find the our bootstrap mean value is slightly higher than the sample value
+	—> say it is 0.5 higher than the sample value
+	—> since we expect that the sample value comes from sampling our population, and therefore also carries some bias, we estimate that the true population mean value is 0.5 less than our sample value
+	—> e.g. avg absolute distance for sample is 5
+	—> bootstra sample, calculate average absolute dist, repeat 1000 times
+	—> distribution of boostraped aad values has center at 5.5
+	—> PIVOT the difference between sample and bootstrap aad values
+	—> true population aad value is 4.5
+
+
+Selection bias in high throughput experiments
+	—> winners curse
+	—> how to correct?
+	—> there is a data set of cntrls and trx with expression data
+	—> calculate difference btwn ctl and trx for each gene, gives distribution of differences in expression
+	—> what is the gene with the maximum difference? This genes though is likely “lucky”, and not actually this high, if we could find it in a true distribution it would likely be much lower
+	—> how do we correct for this? Bootstrap
+		1) bootstrap at the sample level (resample w/ replacement in ctl group and in trx group) —> recalculate ctl trx expression diff
+		2) find the gene with the largest difference
+		3) calculate the distance from this boostrap estimate of distance to the genes original sample value of distance —> This step mirrors our “selection” step in the original set-up, where we identified the gene with the greatest difference in expression
+		4) Do this 1000x, for multiple bootstraps
+		5) This will give a distribution of “overestimation” values, a distribution of measuring how far the greatest -diff gene in each boostrap was from it’s original sample position
+		6) calculate the mean for this distribution of “overestimation” (E)—> use this mean to correct the original data. —> the largest gene difference (L) is actually L-E.
+		7) You can repeat this for not just the largest, but for second alrgest, third largest, etc.. where you recalculate the difference between the second largest in the bootstrapped sample and its true value, get a distribution of this overestimation, and use the mean overestimation to correct the sample value of the second-largest gene difference.
+
+———————————————
+
+Observation Data
+
+ideal sample probability
+actual sample probability for a patient
+
+weight = ideal_prob/actual_prob
+

@@ -1,0 +1,26 @@
+inverse probability weighting
+
+
+** Given someone’s prognosis score, what is the probability they will be assigned tot the new treatment arm
+** Given a a population, what is the probability I will pick a person with a given prognosis score from the population —> this will be shared in botht he pi_ideal and the pi_actual, and so will cancel out…
+
+Group question three:
+	density plot of actual population distribution of prognosis scores
+	density plot of samples distribution of prognosis scores
+	for each individual get a weight
+	each individuals weight is the ratio of their height in the population density plot divided by the height in the sample density plot —> (ideal prob / actual prob )
+
+Group Question Five:
+	If you don’t know the actual population density distribution?
+	ideally, for a given treatment arm, individuals are assigned randomly, so pi_ideal = 0.5 —> they are assigned independent of prognosis
+	in actuality, they are assigned based on a function of their prognosis score, so pi_actual = fn(prognosis)
+	so the weight for each individual is pi_ideal/pi_actual —> 0.5/fn(prognosis)
+	mltiply weight x outcome for each inidivual, take mean accross all individuals
+
+Group Question Six:
+	If you don’t know the assignment function: fn(prognosis), what cn you do?
+	-plot the distribution of prognosis score v. treatment assignment
+	-estimate mechanism for choosing treatment by fitting some smoother to this data.
+	-function for smoother is the function fn(prognosis)
+	-us this smoother function as the pi_actual.
+	

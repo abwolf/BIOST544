@@ -1,0 +1,141 @@
+---
+title: "Lecture 8 Example"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(digits = 3) ## Formats output to 3 digits
+library(ggplot2)
+library(dplyr)
+library(data.table)
+
+setwd("~/Dropbox/courses/dataScience/lectures/lecture8/code") ## Set this to your own working directory
+```
+
+We are interested today in interval estimates. Let's return to the nsclc data. We saw way back how to evaluate if a given response prob $\pi$ was consistent with our data. We will now see a quick and dirty way to find an interval of $\pi$-values that are consistent with the data. 
+
+We first read the data in, and filter on just the patients recieving the new treatment.
+
+
+```{r readin}
+
+nsclc <- read.table("../../../data/nsclc-data/nsclc-modified.txt", header = TRUE)
+
+nsclc.treated <- nsclc %>% filter(tx == 1)
+
+(resp.prop.treat <- mean(nsclc.treated$survival.past.400))
+
+```
+
+Now let us return to our hypothetical question: Is the proportion of successes we saw, `r resp.prop.treat`, consistent with a true response probability of $\pi_T$? (for various $\pi_T$). We first ask, for a given $\pi_T$ value, how far away would we expect to see $\hat{\pi}_T$ our observed proportion? And does this value depend heavily on $\pi_T$?
+
+Let's write a simulation to evaluate this! We first write a function that takes in a $\pi$-value, a number of observations, a lower tail cutoff, a higher tail cutoff, and a number of simulations. From these it calculates the distance between $\pi$ and the quantiles corresponding to the lower tail cutoff and the higher tail cutoff.
+
+``` {r width_func}
+
+distance.away <- function(pi, n, lower.p=0.05, upper.p = 0.95, nsim = 1e4){
+  samples <- rbinom(nsim, n, pi)/n
+  cutoffs <- quantile(samples, c(lower.p,upper.p))
+  dists <- cutoffs - pi
+  return(dists)
+}
+```
+
+Now we apply this with a range of $\pi_T$-values.
+
+``` {r width_calc_many}
+set.seed(1)
+
+pis <- seq(from = 0, to = 1, length.out = 100)
+dists <- matrix(0, nrow = 2, ncol = 100)
+
+for(i in 1:length(pis)){
+  dists[,i] <- distance.away(pis[i], nrow(nsclc.treated))
+}
+
+dists.data <- data.frame(dist = c(dists[1,],dists[2,]), pi = c(pis,pis), type = c(rep("lower", length(pis)), rep("upper",length(pis))))
+
+ggplot(dists.data, aes(x = pi, y = dist, color = type)) + geom_point()
+
+```
+We notice that the upper and lower distances depend potentially quite a bit on where you are, BUT in any local region that is not too close to $\pi=0$ or $\pi=1$ they are relatively constant. eg. for $0.25 < \pi < 0.75$ the upper distance is around $0.075$ and the lower distance is around $-0.075$. In particular our estimate $\hat{\pi}_T = `r resp.prop.treat`$, which is solidly in that region.
+
+Using that as a rough estimate, we expect $\hat{\pi}_T - \pi < 0.075$ and $-0.075 < \hat{\pi}_T - \pi$. With a single line of arithmetic we transform this to $\hat{\pi}_T - 0.075 < \pi$, and $\pi <\hat{\pi} + 0.075$. Plugging in $\hat{\pi}_T = `r resp.prop.treat`$, we get that $(`r resp.prop.treat - 0.075`, `r resp.prop.treat + 0.075`)$ is a reasonable interval estimate.
+
+Rather than using that rough $0.075$, a more disciplined way to estimate the upper and lower endpoints might be to calculate the width using our best guess $\pi_T = \hat{\pi}_T = `r resp.prop.treat`$.
+
+``` {r width_calc_mle}
+(dist.best.est <- distance.away(resp.prop.treat, nrow(nsclc.treated)))
+
+resp.prop.treat + dist.best.est
+```
+
+Let's actually look at the sampling distribution of $\hat{\pi}_T$ when we simulate from $\pi_T = `r resp.prop.treat`$, and get more intuition for how our interval is formed.
+
+``` {r visual_sampling}
+set.seed(1)
+
+n <- nrow(nsclc.treated)
+samples <- rbinom(1e4, n, resp.prop.treat)/n
+
+ggplot(data = data.frame(samples = samples), aes(x = samples, y=..density..)) + 
+  geom_histogram(bins = 10) +
+  geom_vline(xintercept = resp.prop.treat) +
+  geom_vline(xintercept = resp.prop.treat + dist.best.est[1], color = "red") +
+  geom_vline(xintercept = resp.prop.treat + dist.best.est[2], color = "blue")
+
+```
+
+And now if we use this to form our interval estimate we get
+
+``` {r visual_interval}
+ggplot(data = data.frame(samples = samples), aes(x = samples, y=..density..)) + 
+  geom_histogram(alpha=0.2, bins = 10) +
+  geom_vline(xintercept = resp.prop.treat) +
+  geom_vline(xintercept = resp.prop.treat - dist.best.est[2], color = "blue", linetype = "longdash") +
+  geom_vline(xintercept = resp.prop.treat - dist.best.est[1], color = "red", linetype = "longdash")
+```
+
+In this case our upper and lower distance estimates were identical, so our interval is symmetric around `r resp.prop.treat`; consider a case where our estimate is skewed. Suppose we actually observed very few responses (say under $10$ out of the $98$ patients treated). Now we need to consider values of $\pi$ that are $<0.1$. What does the sampling distribution of $\hat{\pi}$ look like for $\pi = 0.05$?
+
+``` {r skewed_calc}
+set.seed(1)
+
+n <- nrow(nsclc.treated)
+samples0.05 <- rbinom(1e4, n, 0.05)/n
+
+ggplot(data = data.frame(samples = samples0.05), aes(x = samples, y=..density..)) + geom_histogram()
+
+```
+
+This has a long right tail! ie. we expect to see values of $\hat{\pi}$ much further above $\pi=0.5$ than below $0.5$. In forming an interval around $\hat{\pi}$ this means it should extend further below $\hat{\pi}$ than above $\hat{\pi}$. This means that the direction in which we see a long tail in our sampling distribution is the **opposite** of the direction we want to extend our interval.
+
+More specifically, if we calculate the upper and lower distances here we get:
+
+``` {r skewed_calc_dist}
+
+(dists <- distance.away(0.05, nrow(nsclc.treated)))
+
+ggplot(data = data.frame(samples = samples0.05), aes(x = samples, y=..density..)) + 
+  geom_histogram() + 
+  geom_vline(xintercept = 0.05) +
+  geom_vline(xintercept = 0.05 + dists[1], color = "red") +
+  geom_vline(xintercept = 0.05 + dists[2], color = "blue")
+
+
+```
+
+Suppose we observed $\hat{\pi} = 0.05$, but we *somehow* knew the correct distances, from the $\pi = 0.05$ truth, (though we didn't actually know the true $\pi$-value, eg. an oracle told us the proper distances but wouldn't tell us $\pi$) what interval should we form? We add/subtract those widths from our $\hat{\pi} = 0.05$ estimate, and see that our interval has a longer left tail (where our sampling distribution had a longer right tail). Again this makes sense because the true parameter tends to fall further to the left of our estimate (the is equivalent to saying that the estimate tends to fall further to the right of our true parameter).
+
+``` {r skewed_calc_interval}
+
+ggplot(data = data.frame(samples = samples0.05), aes(x = samples, y=..density..)) + 
+  geom_histogram() + 
+  geom_vline(xintercept = 0.05, linetype = "longdash") +
+  geom_vline(xintercept = 0.05 - dists[2], color = "blue", linetype = "longdash") +
+  geom_vline(xintercept = 0.05 - dists[1], color = "red", linetype = "longdash")
+
+c(0.05 - dists[2], 0.05 - dists[1]) ## our interval estimate
+
+```

@@ -1,0 +1,71 @@
+---
+title: "Lecture 5 Example"
+output: html_document
+---
+
+We now want to use all parts of the NOAH trial data (clinical and expression data). We will need to work through reading in larger datasets, and merging multiple dataframes. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(digits = 3) ## Formats output to 3 digits
+library(ggplot2)
+library(dplyr)
+library(data.table)
+
+setwd("~/Documents/Dropbox/2016:2017/BIOST544/Data/") ## Set this to your own working directory
+```
+
+First I read in the clinical and expression data, and grab the useful columns from the expression data. The expression data is potentially quite large... And using our usual methods for reading it in can be rather slow. Instead we use the `fread` function from the `data.table` library. 
+
+From the expression data we might grab out the small number of genes we are interested in
+
+```{r readin}
+
+NOAH.clinical <- read.csv("clinical_data.csv", header = TRUE)[,-1]
+NOAH.clinical = as.data.table(NOAH.clinical)
+#NOAH.expression <- read.csv("../../../data/NOAH-data/expression_data.csv", header = TRUE) 
+## THIS IS SLOW
+NOAH.expression <- fread("expression_data.csv", header = TRUE, sep = ',') ## THIS IS WAY FASTER
+```
+
+Suppose we are only interested in $2$ genes: `ACTR3B` and `BAG1`. We could grab the patient identification information  (`centerid` and `patid`) to combine with the clinical data, and the columns corresponding to expression of those genes.
+
+```{r subdata}
+NOAH.exp.keep <- NOAH.expression[,c("centerid", "patid", "ACTR3B", "BAG1")]
+
+NOAH.exp.keep = select(NOAH.expression, centerid, patid, ACTR3B, BAG1)
+```
+
+Now I need to join my two datasets (the astute analyst will notice that some observations are missing from the clinical data). To join these datasets we will need to match on both `centerid` and `patid` (because patients at different centers were given the same ID). However we first note that `centerid` and `patid` are coded as characters in expression data and numbers in clinical data. So we need to convert these to be the same.
+
+```{r recode}
+typeof(NOAH.exp.keep$patid)
+typeof(NOAH.clinical$patid)
+
+### Mismatch! Need to correct that before we can join
+
+NOAH.exp.keep$centerid <- as.numeric(NOAH.exp.keep$centerid)
+NOAH.exp.keep$patid <- as.numeric(NOAH.exp.keep$patid)
+
+```
+
+We use an "inner" join to take the intersection of the observations (note there are many types of *joins* discussed in the `dplyr` literature)
+
+```{r join}
+
+NOAH <- inner_join(NOAH.exp.keep, NOAH.clinical, by=c("centerid","patid"))
+
+NOAH.num <- NOAH %>%
+  mutate(pcr.num = ifelse(as.character(pcr) =="pCR", 1, 0)) %>%
+  mutate(tx = ifelse(treatment == unique(treatment)[2], 1, 0))## making pCR numeric, and shortening treatment name
+```
+
+And now we have a dataset that we can manipulate!
+
+
+```{r}
+
+
+
+```
+

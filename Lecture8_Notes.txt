@@ -1,0 +1,40 @@
+Big Ideas covered so far:
+-Simulation
+-permutation —> permuting like you collect samples
+
+-tuning parameter selection using data splitting
+-high throughput analysis: appropriate measures of association
+	-attack a quantity of clinical/scientific interest
+	-sensible/intuitive given teh data (visual checking)
+	-scale free measure
+
+-multiplicity (running lots of queries): Prescribed selection procedure, rerun the selection procedure when evaluating, the sampling distribution (eg within eac permutation)
+
+-False Discovery Rate vs. tail probability
+	-allowed to make some mistakes, so long as small compared to what is truth
+
+-Appropriate level of complexity in the model
+	-penalities
+	-basis expansions
+	-split-sample validation
+
+-Programatic data analysis
+	-pipeline
+	-functional programming
+
+
+-a priori predictors —> sorting through multiple predictors
+-measures of response
+
+
+Thought Questions:
+3) width of distribution is relatively robust to estimates of pi
+If I were tryingt to estimate an interval around pi, and only had pi-hat, how do we do this?
+Bootstrapping —> as long as our pi-hat is reasonably close to the actual pi, then estimate of width around pi-hat should give a robust estimate of width around pi.
+Simulating —> using pi-hat as an estimate of probability, simulate data using this probability to estiamte width.
+
+4) Pivot idead —> 
+	if pi-hat < pi + 0.1, then pi-hat - 0.1 < pi ;
+	if pi-hat > pi - 0.05, then pi-hat + 0.05 > pi
+	if there is a distribution of confidence around pi-hat for where pi should actually fall
+	to find the interval estimate for pi, mirror the interval estimate for pi-hat —> “The Pivot”

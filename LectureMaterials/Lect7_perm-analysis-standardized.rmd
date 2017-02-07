@@ -1,0 +1,193 @@
+---
+title: "Lecture 7 Example"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache=TRUE)
+options(digits = 3) ## Formats output to 3 digits
+library(ggplot2)
+library(dplyr)
+library(data.table)
+
+setwd("~/Dropbox/courses/dataScience/lectures/lecture7/code") ## Set this to your own working directory
+```
+
+Again we load the NOAH data.
+
+```{r readin}
+
+NOAH.clinical <- read.csv("../../../data/NOAH-data/clinical_data.csv", header = TRUE)[,-1]
+NOAH.expression <- fread("../../../data/NOAH-data/expression_data_probeID.csv", header = TRUE, sep = ',')[,-1] ## THIS IS WAY FASTER
+
+NOAH.expression$centerid <- as.numeric(NOAH.expression$centerid)
+NOAH.expression$patid <- as.numeric(NOAH.expression$patid)
+
+NOAH.clinical.use <- NOAH.clinical %>% select(centerid, patid, her2)
+
+NOAH <- inner_join(NOAH.expression, NOAH.clinical.use, by=c("centerid","patid"))
+```
+
+Now let's evaluate if there is an association between `her2` status, as assessed by staining/IHC, and the expression of any gene.  We first do this by calculating a mean difference between `her2+` patients and `her2-` patients; and then considering those genes with "large" mean differences.
+
+Let's begin by calculating and plotting!
+
+``` {r many-mean-diff}
+NOAH.genes <- NOAH %>% select(-c(centerid, patid, her2))
+
+calc.stat.aad <- function(x, labs){
+  m1 <- mean(x[labs == "HER2+"])
+  m2 <- mean(x[labs == "HER2-"])
+  aad <- mean(c(abs(x[labs == "HER2+"] - m1),
+                abs(x[labs == "HER2-"] - m2)))
+  return((m1-m2)/aad)
+  }
+
+aad.stand.mean.diff <- apply(NOAH.genes,
+                             2,
+                             calc.stat.aad,
+                             NOAH$her2)
+## Note the second argument for calc.stat.aad is included as the final argument in "apply"
+
+stats <- data.frame(aad.stand.mean.diff = aad.stand.mean.diff)
+
+ggplot(stats) + 
+  geom_density(aes(x = aad.stand.mean.diff, y = ..density..))
+
+max(stats$aad.stand.mean.diff)
+```
+
+So we see that our largest mean difference is `r max(stats$aad.stand.mean.diff)`, and occurs in probeset `r colnames(NOAH.genes)[which.max(stats$aad.stand.mean.diff)]`. Now we need to ask ourselves is this larger than one would expect due to chance? We can figure this out via permutation! If there were no association between expression of any gene and her2 what would we expect to see?
+
+``` {r perm_max}
+single.perm <- function(expression, label, calc.stat){
+  perm.label <- sample(label)
+  perm.mean.diff <- apply(expression,
+                          2,
+                          calc.stat,
+                          perm.label)
+  return(perm.mean.diff)
+}
+```
+
+We use the above function (that runs one permutation). What does the histogram aggregated from several permutations look like?
+
+``` {r r_many_perm_run}
+set.seed(1)
+num.runs <- 2e1
+aad.many.perm.stats <- replicate(num.runs,
+                             single.perm(NOAH.genes, NOAH$her2, calc.stat.aad))
+
+all.perm.stats <- data.frame(aad.stand.mean.diff = as.vector(aad.many.perm.stats))
+
+ggplot() + 
+  geom_density(data = all.perm.stats, aes(x = aad.stand.mean.diff, y = ..density..), colour = "green") +
+  geom_density(data = stats, aes(x = aad.stand.mean.diff, y = ..density..), colour = "blue")
+
+```
+
+We can also look at a histogram of the largest mean differences on the permuted data
+
+```{r largest}
+perm.maxes <- apply(aad.many.perm.stats,
+                    2,
+                    max)
+
+ggplot(data.frame(max = perm.maxes), aes(x = max, y = ..density..)) +
+  geom_density()+
+  geom_vline(xintercept = max(stats$aad.stand.mean.diff), color = "red")
+```
+Wow, that is very different from before... Let's look at the most significant feature:
+
+``` {r most_sig}
+ggplot(NOAH, aes(x = X210930_s_at, y =..density.., color = her2)) + geom_density()
+### This should probably not be hardcoded...
+```
+
+Now suppose we are interested in all those genes with a standardized-log-expression difference $\geq 1$. We can pick those out quite easily:
+
+``` {r fold_change_2}
+(num.greater.1 <- stats %>% filter(aad.stand.mean.diff >= 1) %>% summarise(n()))
+
+```
+
+We see that there are `r num.greater.1` of these. Now we might want to see, under a permutation of our labels, how many of our mean differences would usually exceed $1$:
+
+``` {r compare_to_perm}
+(num.found <- apply(aad.many.perm.stats,
+                    2,
+                    function(x){
+                    sum(x >= 1)
+                   }))
+                      
+mean(num.found)
+```
+
+Now what happens if we instead scale by the standard deviation?
+
+``` {r standard_dev_stat}
+calc.stat.sd <- function(x, labs){
+  m1 <- mean(x[labs == "HER2+"])
+  m2 <- mean(x[labs == "HER2-"])
+  sd <- sqrt(mean(c(abs(x[labs == "HER2+"] - m1),
+                    abs(x[labs == "HER2-"] - m2))^2))
+  return((m1-m2)/sd)
+  }
+
+sd.stand.mean.diff <- apply(NOAH.genes,
+                            2,
+                            calc.stat.sd,
+                            NOAH$her2)
+
+stats$sd.stand.mean.diff <- sd.stand.mean.diff ## updating our dataframe with the new stats
+
+ggplot() + 
+  geom_density(data = stats, aes(x = sd.stand.mean.diff, y = ..density..), colour = "red") +
+  geom_density(data = stats, aes(x = aad.stand.mean.diff, y = ..density..), colour = "blue")
+```
+
+Now let's this new measure to permutations.
+
+``` {r sd_perm}
+
+sd.many.perm.stats <- replicate(num.runs,
+                            single.perm(NOAH.genes, NOAH$her2, calc.stat.sd))
+
+all.perm.stats$sd.stand.mean.diff <- as.vector(sd.many.perm.stats)
+
+ggplot() + 
+  geom_density(data = all.perm.stats, aes(x = sd.stand.mean.diff, y = ..density..), colour = "green") +
+  geom_density(data = stats, aes(x = sd.stand.mean.diff, y = ..density..), colour = "blue")
+
+```
+
+### Pivotal Statistics
+
+Let's look at pivotal vs non-pivotal statistics. In the previous example the particular standardization didn't make much difference, however it could.
+
+Let's compare --- here we will look at the one-sample versions of these measures (where before we considered the two sample version). We will generate samples which are mean $0$ from a normal-distribution and a t-distribution (with fatter tails), and compared "standardized means" using both aad and sd for standardization.
+
+``` {r sd_vs_aad}
+n <- 1e3
+
+calc.stat.sd <- function(x){
+mean(x) / sqrt(mean((x - mean(x))^2))
+}
+
+calc.stat.abs <- function(x){
+mean(x) / mean(abs(x - mean(x)))
+}
+
+nrun <- 1e4
+
+stats.norm.abs <- replicate(nrun, calc.stat.abs(rnorm(n)))
+stats.t.abs <- replicate(nrun, calc.stat.abs(rt(n,3)))
+stats.norm.sd <- replicate(nrun, calc.stat.sd(rnorm(n)))
+stats.t.sd <- replicate(nrun, calc.stat.sd(rt(n,3)))
+
+dat <- data.frame(stats = c(stats.norm.abs, stats.t.abs, stats.norm.sd, stats.t.sd), type = rep(c(rep("normal", nrun),rep("t-distributed",nrun)), 2), denom = c(rep("average absolute deviation",2*nrun), rep("sd",2*nrun)))
+
+ggplot(dat, aes(x = stats, y = ..density.., colour = type)) + geom_density() + facet_grid(~denom)
+```
+
+Here we see that the sampling distribution using sd is the same for normal and t-distributed data; however using the aad, our standardized mean differences calculated from t-distributed samples have a sampling distribution that is wider than that calculated from the normal!

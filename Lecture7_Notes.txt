@@ -1,0 +1,25 @@
+scale free measures:
+	correlations —> proportion of variability in b is explained by a —> r^2
+		—> smoothers, scale binsize when scaling x
+	-for binary outcome we measures (mean_diff)/(variability_within_calss)
+	-necesary that (variability_within_class) and (mean_difference) are on the same scale
+	-this is the advantage of std.dev, it is a scale free measure because of the sqr-root
+
+semi-pivotal measures —> the only way to make data trully scale-free is to use SD.
+	—> using SD ensures that the dispersion of the data is standardized across data sets.
+	—> Dispersion of the data is essential, along with scale-free property, 
+	because a few genes with large dispersion can confound ability to find outliers.
+		—> well-behaved genes have small tails, narrow distribution
+		—> wild genes have large tails, wide distributions
+		—> If you use measures of variability like:
+			absolute average difference or Inter-quartile range
+		the distribtuions for the wild genes will still be wider than the well-behaved genes
+		the result being, when you look at the tails for the outliers, 
+		you will preferentially find genes from the “wild” group, 
+		even though these may not be as unusual expression levels for these genes.
+		—> If you use a STD to measure variability and normalize,
+		the distributions for the wild and well-behaved genes will be equally wide,
+		the result being, when you look at the tails for outliers, 
+		you will find true outliers, with an unbiased chance of picking wild and well-behaved genes
+
+	

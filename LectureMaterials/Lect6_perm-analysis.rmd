@@ -1,0 +1,195 @@
+---
+title: "Lecture 6 Example"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache=TRUE)
+options(digits = 3) ## Formats output to 3 digits
+library(ggplot2)
+library(dplyr)
+library(data.table)
+
+setwd("~/Do") ## Set this to your own working directory
+```
+
+Let's evaluate the questions from the warmup:
+
+We will again work with the NOAH trial data. Let's read it in and combine our datasets. Now we are using a dataset with probe-set-IDs as our column names.
+
+```{r readin}
+
+NOAH.clinical <- read.csv("~/Documents//Dropbox/2016:2017/BIOST544/Data/clinical_data.csv", header = TRUE)[,-1]
+#NOAH.expression <- read.csv("../../../data/NOAH-data/expression_data.csv", header = TRUE) 
+## THIS IS SLOW
+NOAH.expression <- fread("~/Documents//Dropbox/2016:2017/BIOST544/Data/expression_data.csv", header = TRUE, sep = ',') ## THIS IS WAY FASTER
+
+NOAH.expression$centerid <- as.numeric(NOAH.expression$centerid)
+NOAH.expression$patid <- as.numeric(NOAH.expression$patid)
+
+NOAH.clinical.use <- NOAH.clinical %>% select(centerid, patid, her2)
+
+NOAH.clinical = as.data.table(NOAH.clinical)
+NOAH <- inner_join(as.data.table(NOAH.expression), as.data.table(NOAH.clinical.use), by=c("centerid","patid"))
+```
+
+Now let's evaluate if there is an association between `her2` status, as assessed by staining/IHC, and the expression of any gene.  We first do this by calculating a mean difference between `her2+` patients and `her2-` patients; and then considering those genes with "large" mean differences.
+
+Let's begin by calculating and plotting!
+
+``` {r many-mean-diff}
+NOAH.genes <- NOAH %>% select(-c(centerid, patid, her2))
+
+exp.mean.diff <- apply(NOAH.genes,
+                  2,
+                  function(x){
+                  mean(x[NOAH$her2 == "HER2+"]) - mean(x[NOAH$her2 == "HER2-"])
+                  })
+
+exp.median.diff <- apply(NOAH.genes,
+                    2,
+                    function(x){
+                    median(x[NOAH$her2 == "HER2+"]) - median(x[NOAH$her2 == "HER2-"])
+                    })
+
+stats <- data.frame(median.diff = exp.median.diff, mean.diff = exp.mean.diff)
+
+ggplot(stats) + 
+  geom_density(aes(x = median.diff, y = ..density.., colour = "red")) + 
+  geom_density(aes(x = mean.diff, y = ..density.., colour = "blue"))
+
+max(stats$mean.diff)
+```
+
+So we see that our largest mean difference is `r max(stats$mean.diff)`, and occurs in probeset `r colnames(NOAH.genes)[which.max(stats$mean.diff)]`. Now we need to ask ourselves is this larger than one would expect due to chance? We can figure this out via permutation! If there were no association between expression of any gene and her2 what would we expect to see?
+
+``` {r perm_max}
+single.perm <- function(expression, label){
+  perm.label <- sample(label)
+  perm.mean.diff <- apply(expression,
+                          2,
+                          function(x){
+                          mean(x[perm.label == "HER2+"]) - mean(x[perm.label == "HER2-"])
+                          })
+  return(perm.mean.diff)
+}
+```
+
+We use the above function (that runs one permutation). What does the histogram from that single permutation look like?
+
+``` {r r_one_perm_run}
+set.seed(1)
+one.perm.stats <- data.frame(mean.diff = single.perm(NOAH.genes, NOAH$her2))
+
+ggplot() + 
+  geom_density(data = one.perm.stats, aes(x = mean.diff, y = ..density..), colour = "green") +
+  geom_density(data = stats, aes(x = mean.diff, y = ..density..), colour = "blue")
+```
+
+Generally we want to aggregate histograms of many different permutations
+
+``` {r r_many_perm_run}
+num.runs <- 1e2
+many.perm.stats <- replicate(num.runs,
+                             single.perm(NOAH.genes, NOAH$her2))
+
+all.perm.stats <- data.frame(mean.diff = as.vector(many.perm.stats))
+
+ggplot() + 
+  geom_density(data = all.perm.stats, aes(x = mean.diff, y = ..density..), colour = "green") +
+  geom_density(data = stats, aes(x = mean.diff, y = ..density..), colour = "blue")
+
+```
+
+We can also look at a histogram of the largest mean differences on the permuted data
+
+```{r largest}
+perm.maxes <- apply(many.perm.stats,
+                    2,
+                    max)
+
+ggplot(data.frame(max = perm.maxes), aes(x = max, y = ..density..)) +
+  geom_density()+
+  geom_vline(xintercept = max(stats$mean.diff), color = "red")
+```
+
+What happens if we ignored our selection procedure and just considered permuting the gene that "happened" to give the largest value? (`r colnames(NOAH.genes)[which.max(stats$mean.diff)]`)
+
+``` {r largest_oops}
+ooops.stats <- many.perm.stats[which.max(stats$mean.diff), ]
+
+perm.stats <- data.frame(max = perm.maxes, ooops = ooops.stats)
+
+ggplot()+ 
+  geom_density(data = perm.stats, aes(x = max, y = ..density..), colour = "green")+
+  geom_density(data = perm.stats, aes(x = ooops, y = ..density..), colour = "blue") +
+  geom_vline(xintercept = max(stats$mean.diff), colour = "red")
+```
+
+In this case neither permuted histogram is consistent with our observed maximum; however our naive procedure (ignoring selection) gives a distribution centered around $0$ (which has to be incorrect! very rarely, even if none of the genes are truly associated, will we see a maximum value of $0$!).
+
+Now suppose we are interested in all those genes with an empirical fold change $\geq 2$ (ie a difference of at least $1$ on the log scale). We can pick those out quite easily:
+
+``` {r fold_change_2}
+(num.greater.1 <- stats %>% filter(mean.diff >= 1) %>% summarise(n()))
+
+```
+
+We see that there are `r num.greater.1` of these. Now we might want to see, under a permutation of our labels, how many of our mean differences would usually exceed $1$:
+
+``` {r compare_to_perm}
+num.found <- apply(many.perm.stats, 2,
+                    function(x){
+                     sum(x >= 1)
+                     })
+                      
+mean(num.found)
+```
+
+So we might expect to see $0.27$ on average if nothing was going on. Thus if we wanted to talk about how many of those `r num.greater.1` discoveries were false, we might estimate `r mean(num.found)`. This would give us the estimate of the so-called **False Discovery Rate** of $\frac{`r num.greater.1`}{`r mean(num.found)`}$.
+
+## A tale of two mean differences
+
+Let's look at two sets of histograms with roughly the same mean difference, but very difference clinical significances:
+
+``` {r mean_vs_var}
+n <- 300
+
+set.seed(2)
+
+data.narrow <- data.frame(exp.val = c(rnorm(n)/2, rnorm(n)/2 + 3), her2 = c(rep("pos",n),rep("neg",n)), type = "narrow")
+
+data.wide <- data.frame(exp.val = c(rnorm(n)*2, rnorm(n)*2 + 3), her2 = c(rep("pos",n),rep("neg",n)), type = "wide")
+
+data.combine <- rbind(data.narrow,data.wide)
+
+ggplot(data.combine, aes(x = exp.val, y = ..density.., color = her2)) + geom_density() + facet_grid(~type)
+
+```
+
+What's going on here? The histograms in the right panel are $4$ times as wide as those in the left panel. Rather than just considering the mean difference, the ratio of the mean difference to the width (or some measure of dispersion within each histogram) is much more important for evaluating how well expression informs her2 status.
+
+In addition homogenizing our measure of importance/significance (over the candidate features in the screen) is extremely important in these high throughput problems.  Why is that?  Let's consider what happens if $10\%$ of our genes were run on a different platform that provides measurements on a different scale (say a scale where everything is multiplied by $4$). What happens if we ignore this in running our analysis? Let's see on the NOAH trial data
+
+``` {r heterogeneous}
+
+platform <- c(rep(1,5400),rep(0,ncol(NOAH.genes)-5400))
+
+NOAH.heterogeneous.genes <- NOAH.genes
+NOAH.heterogeneous.genes[,platform == 1] <- NOAH.heterogeneous.genes[,platform == 1] * 3
+
+mean.diff.hetero <- apply(NOAH.heterogeneous.genes,
+                          2,
+                          function(x){
+                            mean(x[NOAH$her2 == "HER2+"]) - mean(x[NOAH$her2 == "HER2-"])
+                            })
+
+ggplot(data.frame(stat = mean.diff.hetero, platform = factor(platform)),
+       aes(x = stat, y = ..density.., color = platform)) +
+  geom_density()
+
+```
+
+As we can see, any signal from the originally scaled $90\%$ of the data is washed out from that scaled up $10\%$.
+
+Ideally our measure of interest should be robust to this! (Why should we be more interested if we changed our scale without changing our data?). By updating our measure of interest from a difference of means to something more sensible (and scale free) we can fix these issues!

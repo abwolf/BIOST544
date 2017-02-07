@@ -1,0 +1,19 @@
+High throughut screens —> taking an outcome and looking at its relation to each individual predictor
+Homogenizing measures of importance —> if you have different measures on different scales
+
+3) how do we assess if an observed mean-difference that is largest of the 20k genes is consistent with independence between RA-status and gene expression?
+	—> permute RA-status label, re-analyze data and identify the largest-mean-difference in the full data set
+	—> repeat this permutation analysis and plot the distribution of the largest-mean-difference values for all the genes (i.e. after each permutation, there will be some gene with the largest-mean-difference, the same gene may not have the largest mean difference, but this will represent the distribution of the mean-differences for potentially significant genes, this distribution should be only positive values, since we are taking observations only from the very absolute tails of each permutations distribution.
+	—> where does or initial largest-mean-difference value fall in relation to the distribtuion of largest-mean-differences following permutation? 
+		—> if it is far in the tail, then it is likely a trully significant finding.
+	—> If it is significant, it still represents an over-optimistic estimation of that significance. Re-analysis on a new data set, even if it is a meaningful association, should have a lower significance value.
+
+4) How to evaluate FDR using permutation —> for a given cutoff in the empirical data, you identified X number of genes above this cutoff. Now, looking at the simulated/permuted data, how many genes in the permutation fall above this cutoff? Y genes are found to be above this threshold in the permuted data. Y/X gives you your FDR. You can change the cutoff theshold to modulate your FDR. 
+	—> comparing empirical histogram to simulated histogram, and look at proportion in tail behavior.
+
+How to measure spread in the data?
+	—> weight the mean difference by the variability within the population
+	—> how do we measure the variability within the populations?
+		—> standard deviation
+		—> why stdev (w/ sqr-root) v. variance (no sqr-root)?
+			—> looking for a scale free measure (how to compare btwn Celcius and Farenheit?, different genotype platforms and readouts)

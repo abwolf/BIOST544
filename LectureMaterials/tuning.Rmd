@@ -1,0 +1,155 @@
+---
+title: "Lecture 4 Example"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(digits = 3) ## Formats output to 3 digits
+library(ggplot2)
+library(dplyr)
+
+setwd("~/Dropbox/courses/dataScience/lectures/lecture3/code") ## Set this to your own working directory
+
+set.seed(1)
+```
+
+## Reminder
+To get markdown to work remember: Install the newest version of **R**!
+
+## Data Analysis
+
+We begin by talking about split-sample validation for tuning smoothing parameters. We return to our data from the NOAH trial. At the end of the previous set of notes we evaluated if HER2 expression was indicative of improved or diminished response on either Trastuzumab + chemo or chemo alone. In doing so we fit a loess smoother to our data. By default `ggplot2` uses `span=0.75` as the smoothing width (so the nearest $75\%$ of the data is used, weight diminshing weights, when evaluating an estimated response probability). As we get more points the `span` can (and should) go down (as even a small proportion of a large number of points is quite large). To figure out an "optimal" choice for span we will use split-sample validation.
+
+First we will randomly allocate our data to $1/2$ training data and $1/2$ test data.
+
+```{r split}
+NOAH <- read.csv("~/Documents/Dropbox/2016:2017/BIOST544/Data/clinical_data.csv", header = TRUE)[,-1] ## The first column is just the identifiers 1,2,..., so we discard it
+
+NOAH.non3n <- NOAH %>% filter(er.ct > 10, her2.ct > 10, pr.ct > 10) %>%
+  mutate(pcr.num = ifelse(as.character(pcr) =="pCR", 1, 0)) %>%
+  mutate(tx = ifelse(treatment == unique(treatment)[2], 1, 0))## removing triple negative BC, making pCR numeric, and shortening treatment name
+  
+
+n <- nrow(NOAH.non3n)
+n.train <- floor(n * 1/2) ## "floor()" truncated decimals
+
+ind.train <- sample(1:n, n.train, replace = FALSE)
+
+NOAH.split <- NOAH.non3n %>% mutate(train.test = (1:n %in% ind.train)) ## %in% checks if each element from one vector exists somewhere in the other
+```
+
+We can now plot the points, colored by `train.test` label.
+``` {r split_plot}
+ggplot(NOAH.split, aes(x=her2.ct, y = pcr.num, color = as.factor(train.test))) + geom_point()
+```
+
+In addition, let's restrict ourselves to patients treated with Trastuzumab. Here we can look smoothed estimates with various different `span` values (we try `span = c(0.1,0.2,0.3,0.4,0.5)`)
+
+``` {r smoother_plots, message=F}
+### Sets the spans and RGB-values for the colors ###
+color.interp <- colorRamp(c(rgb(1,0.8,0.8),rgb(0.6,0.2,0.8)))
+colors <- color.interp((1:8)/8)/255
+spans <- (1:8)/5
+
+### Creates a plot with the points
+new.plot <- NOAH.split %>% filter(train.test == 1, tx == 1) %>%
+  ggplot(aes(x = her2.ct, y = pcr.num)) + geom_point()
+
+### Adds all the different smoothers
+for(i in 1:length(spans)){
+  col <- rgb(colors[i,1], colors[i,2], colors[i,2], alpha = 0.8)
+  new.plot <- new.plot + geom_smooth(span = spans[i], color = col, se = FALSE)
+}
+
+### Display the plot
+new.plot
+```
+
+Now, for each candidate `span` we would like to calculate a measure of accuracy on our test set. One measure we have talked about is "mean-squared-error". Here, for each observation and `span`-value, we get an estimated probability of `pCR` $\hat{\pi}$ and an observed `pCR`. Our "error" can be taken as the difference between $\hat{\pi}$ and our $0,1$ indicator of `pCR`. So in calculating "mean-squared-error", we square this value for each observation, and average over the observations.
+
+We first write a function that takes in a predictive model and test data, and evaluates the "MSE" of that predictive model.
+
+```{r calc_mse}
+evaluate.mse <- function(predictive.model, test.data){
+  predictions <- predict(predictive.model, test.data)
+  errors <- test.data$pcr.num - predictions
+  mse <- mean(errors^2)
+  return(mse)
+}
+```
+
+Now we can evaluate the curves built with different `span` values. We do this in a loop; cycling over the candidate `span`-values, building our curves, and then evaluating them
+
+```{r eval_span}
+mse <- rep(0,length(spans))
+for(i in 1:length(spans)){
+  pred.mod <- loess(pcr.num ~ her2.ct, span = spans[i],
+                  data = NOAH.split %>% filter(train.test == 1, tx == 1),
+                  control = loess.control(surface = "direct")) ## the control arg just allows for extrapolation
+  mse[i] <- evaluate.mse(pred.mod,
+                          NOAH.split %>% filter(train.test == 0, tx == 1))
+}
+(mse)
+```
+
+Here we see that the optimum is at the `r which.min(mse)`th value of `span` which is `r spans[which.min(mse)]`. We can now refit to all of the `tx=1` data using this `span`-value
+
+```{r refit, message = F}
+NOAH.split %>% filter(tx == 1) %>%
+  ggplot(aes(x = her2.ct, y = pcr.num)) + 
+  geom_point() + 
+  geom_smooth(span = spans[which.min(mse)], se = FALSE)
+  
+```
+
+We can now do the same for the control arm
+
+```{r control_version}
+mse.control <- rep(0,length(spans))
+for(i in 1:length(spans)){
+  pred.mod <- loess(pcr.num ~ her2.ct, span = spans[i],
+                  data = NOAH.split %>% filter(train.test == 1, tx == 0),
+                  control = loess.control(surface = "direct")) ## the control arg just allows for extrapolation
+  mse.control[i] <- evaluate.mse(pred.mod,
+                            NOAH.split %>% filter(train.test == 0, tx == 0))
+}
+(mse.control)
+```
+
+We note that in both cases our validation chooses a not-too-wiggly model. This makes sense as we do not have that much data; and with smaller datasets you generally do not want to fit a particularly complex model.
+
+Combining our choices for `tx=1` and `tx=0` and plotting both curves, we get:
+
+```{r refit_all, message = F}
+ggplot(NOAH.split, aes(x = her2.ct, y = pcr.num, color = as.factor(tx))) + 
+  geom_point() + 
+  geom_smooth(data = NOAH.split %>% filter(tx == 1),
+              span = spans[which.min(mse)], se = FALSE) +
+  geom_smooth(data = NOAH.split %>% filter(tx == 0),
+              span = spans[which.min(mse.control)], se = FALSE)
+  
+```
+
+Let's now do this with $5$-fold cross-validation. We first assign folds randomly:
+```{r cv_folds}
+NOAH.cv <- NOAH.non3n %>% mutate(fold = sample(1:5, nrow(NOAH.non3n), replace = TRUE))
+```
+
+Now we will evaluate MSE for each `span`-value within each fold.
+
+```{r eval_cv}
+mse.treat.cv <- matrix(0, nrow = length(spans), ncol = 5)
+for(i in 1:length(spans)){
+  for(k in 1:5){
+    pred.mod <- loess(pcr.num ~ her2.ct, span = spans[i],
+                      data = NOAH.cv %>% filter(fold != k, tx == 1),
+                      control = loess.control(surface = "direct")) ## the control arg just allows for extrapolation
+    mse.treat.cv[i,k] <- evaluate.mse(pred.mod,
+                            NOAH.cv %>% filter(fold == k, tx == 1))
+  }
+}
+apply(mse.treat.cv,1, mean) ## This line calculates the mean of each row
+```
+
+We can see now that this chooses a similarly large `span` value.

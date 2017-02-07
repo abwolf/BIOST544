@@ -1,0 +1,172 @@
+---
+title: "Lecture 9 Example"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(digits = 3) ## Formats output to 3 digits
+library(ggplot2)
+library(dplyr)
+library(data.table)
+
+setwd("~/Dropbox/courses/dataScience/lectures/lecture9/code") ## Set this to your own working directory
+```
+
+We will sick with the nsclc data for the time being. We return to an earlier question: we have patients on two arms, new treatment, and standard-of-care. We are interested in building an interval estimate for the difference in response probabilities between the two.
+
+We again read the data in, and calculate empirical response proportions for both new-treatment and standard-of-care, as well as the number of patients on each arm.
+
+
+```{r readin}
+
+nsclc <- read.table("../../../data/nsclc-data/nsclc-modified.txt", header = TRUE)
+
+(resp.prop <- nsclc %>% group_by(tx) %>% summarise(prop = mean(survival.past.400)))
+(num.enroll <- nsclc %>% group_by(tx) %>% summarise(num = n()))
+
+pi.treat <- resp.prop$prop[2]; pi.control <- resp.prop$prop[1]
+n.treat <- num.enroll$num[2]; n.control <- num.enroll$num[1]
+
+```
+
+We now want to calculate a sampling distribution for the difference in proportions. We write a general function which will do this for an arbitrary $\pi_T, \pi_C, n_T, n_C$:
+
+``` {r sample_func}
+sim.diffs <- function(pi.t, pi.c, n.t, n.c, nsim = 1e4){
+  samp.pis.t <- rbinom(nsim, n.t, pi.t)/n.t
+  samp.pis.c <- rbinom(nsim, n.c, pi.c)/n.c
+
+  diffs <- samp.pis.t - samp.pis.c
+  return(diffs)
+}
+```
+
+We now write a function that leverages `sim.diffs()` to first evaluate those upper and lower distances (from the center of our sampling distribution to our $5\%$ and $95\%$ quantiles); and then pivot those distances around our original point estimate.
+
+``` {r ci_calc_func}
+ci.calc <- function(pi.t, pi.c, n.t, n.c, nsim = 1e4, prob.bounds = c(0.05,0.95)){
+  sampling.dist <- sim.diffs(pi.t, pi.c, n.t, n.c, nsim)
+  quants <- quantile(sampling.dist, prob.bounds)
+  dists <- quants - (pi.t - pi.c)
+  interval <- (pi.t - pi.c) - dists
+  return(interval[2:1])
+}
+```
+
+then apply this function to generate a sampling distribution using our best estimates for $\pi_T$ and $\pi_C$
+
+``` {r }
+(ci <- ci.calc(pi.treat, pi.control, n.treat, n.control))
+
+sampling_dist <- sim.diffs(pi.treat, pi.control, n.treat, n.control)
+
+ggplot(data = data.frame(diff = sampling_dist), aes(x = diff, y=..density..)) + geom_density()
+```
+
+## Bootstrap
+
+We can use these same ideas for interval estimates of continuous parameters. For this we will look at the NOAH data.
+
+```{r NOAH_readin}
+
+NOAH.clinical <- read.csv("../../../data/NOAH-data/clinical_data.csv", header = TRUE)[,-1]
+
+```
+
+Suppose we are interested in an interval estimate for mean pct of invasive tumor cells in HER2 positive breast tumors (as assessed by IHC); and we believe that the tumors from the NOAH data are a representative sample.
+
+```{r point_est}
+(mean.invasive.tumor.pct <- NOAH.clinical %>% 
+  filter(her2 == "HER2+") %>% 
+  summarise(mean.invasive.pct = mean(invasive_tumor_cells.pct)) %>%
+  unlist())
+```
+
+Now we would like to understand the width of the sampling distribution of the sample-mean. We can no longer estimate our sampling distribution by simply estimating one or two parameters. Instead we pretend like our data are perfectly representative of the population, and evaluate our sampling-distribution by resampling from the data with replacement. We write a function that resamples from the data once, and calculates a new mean:
+
+```{r do_one_resamp}
+do.one <- function(outcome){
+  new.outcomes <- sample(outcome, replace = TRUE)
+  return(mean(new.outcomes))
+}
+```
+
+We then run this a large number of times and look at the distribution of those resampled statistics
+```{r do_many_resamp}
+set.seed(1)
+
+itc.pct <- unlist(NOAH.clinical %>% filter(her2 == "HER2+") %>% select(invasive_tumor_cells.pct))
+## I save this so it doesn't have to be recalculated for each iteration of the replicate
+
+resamp.means <- replicate(1e4, do.one(itc.pct))
+
+ggplot(data = data.frame(resamp.means = resamp.means), aes(x=resamp.means, y=..density..)) + 
+  geom_density() + 
+  geom_vline(xintercept = mean.invasive.tumor.pct, color = "red")
+
+
+```
+
+We now do the same calculation as before (of the quantiles and upper/lower distances).
+
+```{r upper_lower_dist}
+quantiles <- quantile(resamp.means, c(0.05,0.95))
+
+distances <- quantiles - mean.invasive.tumor.pct
+
+ggplot(data = data.frame(resamp.means = resamp.means), aes(x=resamp.means, y=..density..)) + 
+  geom_density() + 
+  geom_vline(xintercept = mean.invasive.tumor.pct, color = "red") +
+  geom_vline(xintercept = quantiles[1], color = "blue", linetype="dashed") +
+  geom_vline(xintercept = quantiles[2], color = "blue", linetype="dashed")
+```
+
+And now we pivot to get our confidence interval
+
+```{r pivot}
+(CI <- mean.invasive.tumor.pct - distances[2:1])
+```
+
+This was a simple example, but we can also use this machinery to calculate interval-estimates of more complex summaries. For example, suppose we want an interval estimate of the spearman correlation between `invasive_tumor_cells.pct` and `inflammatory_cells.pct`. We can first calculate our point estimate:
+
+``` {r spearman.cor}
+(s.cor <- with(NOAH.clinical,
+               cor(invasive_tumor_cells.pct, inflammatory_cells.pct, method = "spearman")))
+```
+
+However, we would like to assess the variability of our estimate --- and thus would like an interval estimate. This works precisely as before, only now we calculate a sampling distribution for spearman correlation. Let's write this more functionally.
+
+``` {r spearman.bootstrap}
+calc.stat <- function(x,y){
+  return(cor(x,y, method = "spearman"))
+}
+
+do.one <- function(data){
+  perm.labels <- sample(1:nrow(data), replace = TRUE)
+  perm.data <- data[perm.labels,]
+  return(calc.stat(perm.data[,1], perm.data[,2]))
+}
+
+calc.CI<- function(data, nsim = 1e4, cutoffs = c(0.05,0.95)){
+  original.stat <- calc.stat(data[,1],data[,2])
+  stats <- replicate(nsim, do.one(data))
+  quantiles <- quantile(stats, cutoffs)
+  dists <- quantiles - original.stat
+  CI <- original.stat - dists[2:1]
+  return(list(CI = CI, sampling_dist = stats))
+}
+```
+Now by calling `calc.CI` we get a confidence interval, and can look at the sampling distribution
+
+``` {r calc.CI}
+
+CI <- calc.CI(NOAH.clinical %>% select(invasive_tumor_cells.pct, inflammatory_cells.pct))
+
+CI$CI
+
+ggplot(data.frame(s.cor = CI$sampling_dist), aes(x=s.cor, y=..density..)) + 
+  geom_density() + 
+  geom_vline(xintercept = s.cor)
+
+```

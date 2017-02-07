@@ -1,0 +1,117 @@
+---
+title: "Lecture 5: Warmup"
+author: Noah Simon
+date: Jan 17, 2017
+output: pdf_document
+header-includes:
+- \usepackage{color}
+- \definecolor{mygray}{gray}{0.6}
+- \definecolor{orange}{rgb}{0.9,0.5,0}
+- \newcommand{\cc}{{\tt TRIO}}
+- \newcommand{\bb}{{\tt CHMP2B}}
+---
+
+This is a programming warmup!
+
+Please use the NOAH trial data (clinical and expression data) for the following exercise:
+
+Suppose we would like to build a predictive model using RNA expression of genes `TRIO`, and `CHMP2B` to predict percent of invasive cells in our tumor microenvironment `invasive_tumor_cells.pct`. We decide to use a polynomial model of the form:
+\begin{align*}
+{\tt invasive\_tumor\_cells.pct} \sim \mu &+ \left[\alpha_1 \cc + ... + \alpha_m \cc^m\right]\\
+&+ \left[\beta_1 \bb + ... + \beta_m \bb^m\right]\\
+\end{align*}
+However, we are not sure what $m$ to use.
+
+Please write code that will select an appropriate $m$ (using split-sample or cross-validation), and, with that $m$ will fit a model (in the above form) to the entire dataset.
+
+Recall that 
+
+1) `poly(feature, j, raw=T)` will expand the vector `feature` to a matrix with columns (`feature`, `feature`$^2$, ..., `feature`$^j$)
+
+2) `lm(outcome ~ poly(feature1,j,raw=T) + poly(feature2,j,raw=T))` will build a model:
+\[
+{\tt outcome} \sim b_0 + \left(a_1 {\tt feature1} + \ldots + a_j {\tt feature1}^j\right) + \left(b_1 {\tt feature2} + \ldots + b_j {\tt feature2}^j\right)
+\]
+
+3) Using `predict(object = lm.output, newdata = new.data)` will give predictions for `new.data` from the output of our linear model, `lm.output`.
+
+## Solution
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(digits = 3) ## Formats output to 3 digits
+library(ggplot2)
+library(dplyr)
+library(data.table)
+
+setwd("~/Dropbox/courses/dataScience/lectures/lecture5/warmup") ## Set this to your own working directory
+```
+
+First I read in the clinical and expression data, and grab the useful columns from the expression data.
+
+and add helpful columns
+
+```{r readin}
+
+NOAH.clinical <- read.csv("../../../data/NOAH-data/clinical_data.csv", header = TRUE)[,-1]
+#NOAH.expression <- read.csv("../../../data/NOAH-data/expression_data.csv", header = TRUE) ## THIS IS SLOW
+NOAH.expression <- fread("../../../data/NOAH-data/expression_data.csv", header = TRUE, sep = ',')[,-1] ## THIS IS WAY FASTER
+
+NOAH.exp.keep <- NOAH.expression[,c("centerid", "patid", "TRIO", "CHMP2B")]
+```
+
+Now I need to join my two datasets (the astute analyst will notice that some observations are missing from the clinical data). To join these datasets we will need to match on both `centerid` and `patientid` (because patients at different centers were given the same ID). However we first note that `centerid` and `patientid` are coded as characters in expression data and numbers in clinical data. So we need to convert these to be the same.
+
+```{r join}
+typeof(NOAH.exp.keep$patid)
+typeof(NOAH.clinical$patid)
+
+### Mismatch! Need to correct that before we can join
+
+NOAH.exp.keep$centerid <- as.numeric(NOAH.exp.keep$centerid)
+NOAH.exp.keep$patid <- as.numeric(NOAH.exp.keep$patid)
+
+
+NOAH <- inner_join(NOAH.exp.keep, NOAH.clinical, by=c("centerid","patid"))
+
+NOAH.num <- NOAH %>%
+  mutate(pcr.num = ifelse(as.character(pcr) =="pCR", 1, 0)) %>%
+  mutate(tx = ifelse(treatment == unique(treatment)[2], 1, 0))## making pCR numeric, and shortening treatment name
+```
+
+Now that we have our joint data.frame, we randomly assign our data to training/test sets
+
+```{r train_test}
+set.seed(1)
+
+NOAH.train.test <- NOAH.num %>% mutate(train.test = sample(c("train","test"), nrow(NOAH.num), replace = TRUE))
+```
+
+We now write a function that takes in a `data` and a `degree` argument; it fits an additive polynomial of degree `degree` to the training subset of `data`; and evaluates the MSE of predictions on the test subset of `data`.
+
+```{r eval_func}
+eval.degree <- function(dat, degree){
+  fit <- lm(invasive_tumor_cells.pct ~ poly(CHMP2B, degree) + poly(TRIO, degree),
+            data = dat %>% filter(train.test == "train"))
+  preds <- predict(fit, newdata = dat %>% filter(train.test == "test"))
+  errors <- (dat %>% filter(train.test == "test") %>% select(invasive_tumor_cells.pct)) - preds
+  MSE <- mean(errors^2) ## Other measures of error could be used!
+  return(MSE)
+}
+
+```
+
+Now, we cycle through and evaluate the MSE for polynomials up to degree $7$.
+
+```{r doing_eval}
+max.degree <- 7
+MSEs <- rep(0,max.degree)
+
+for(degree in 1:max.degree){
+ MSEs[degree] <- eval.degree(NOAH.train.test, degree)
+}
+
+(MSEs)
+
+which.min(MSEs)
+```

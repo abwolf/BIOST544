@@ -1,0 +1,20 @@
+Warmup:
+model fitting, picking binwidth for model fit
+1) splitting data into test and validation sets
+MSE
+ROC —> area under the curve ; measure of false-positive, false-negative ; to true-positive to true-negative
+do we have to treat binary and continuous data differently? —> can we just also measure MSE
+2) how to pick cut off for where terx does better than cntrl? For curve fitting trx and curve fitting cntrl, find where curves cross paths, where trx has higer proportion of success than cntrl.
+	# to assess how good these models are, could use a validation set to measure predictive ability of model, what is the best cutoff for new trx, 
+	# permute within full data set on trx-status, find new best cutoff 
+	with cutoff, calculate mean effect for patients above that cutoff,
+	compare empirical mean effect with permutated data mean effect
+
+
+Lecture:
+issues of multiplicity/multiple-testing/selection biasis
+split sample validation —> training set and validation set
+
+cross-validation —> very useful for tuning parameters, not very good for free-form analyses (looking at plots overall, do we see same pattern in training and validation sets)
+
+DO NOT “explore” and “confirm” on the same data

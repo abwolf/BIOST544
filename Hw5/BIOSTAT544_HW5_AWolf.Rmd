@@ -1,0 +1,186 @@
+---
+title: "BIOSTAT544_HW5_AWolf"
+author: "Aaron Wolf"
+date: "February 6, 2017"
+output: html_document
+---
+
+```{r}
+library(ggplot2)
+library(data.table)
+library(dplyr)
+```
+
+```{r}
+example_trial = fread('~/Documents/Dropbox/2016:2017/BIOST544/HW5/Example_Trial.txt')
+```
+
+Patients are enrolled in the study, and assigned to the different treatment arms (trx or ctl) based on their prognosis score. Patients with poor prognosis scores are more likely assigned to trx, and those with better prognosis scores are more likely assigned to ctl.  
+Assuming this randomization scheme was applied , write a function that takes in the Score, outcome, and treatment group, and outputs an estimate of the treatment effect. --> What does treatment effect mean? difference in the mean proportion for trx v. ctl?  
+Could you use a logisitic regression? outcome ~ S + trx --> how do you include information about the randomization?  
+Or use the same randomization scheme within a bootstrap-framework, repeat 1000 times, see what the distribution looks like for difference in responce between trx and ctl (summary statistic), where does the original point fall. Is this in a 5% tail?
+
+1. Function to calculate empirical treatment effect
+```{r estimate of treatment effect, echo=TRUE, eval=FALSE}
+treatment.effect.fn=function(data){
+#   # Reassign trx/ctl status, if S <= 0.5, PNEW=0.75 ; if S > 0.5, PNEW=0.25
+#   PNEW.Slo = 0.75
+#   PNEW.Shi = 0.25
+#   dt.Slo = data %>% filter(score<=0.5) %>% mutate(tx.mut = sample(x = c(0,1), size = nrow(filter(data, score<=0.5)), replace = TRUE, prob = c(1-PNEW.Slo, PNEW.Slo)))
+#   dt.Shi = data %>% filter(score>0.5) %>% mutate(tx.mut = sample(x = c(0,1), size = nrow(filter(data, score>0.5)), replace = TRUE, prob = c(1-PNEW.Shi, PNEW.Shi)))
+#   data = rbind(dt.Slo, dt.Shi)
+    
+  # Calculate the empirical difference in the response proportion for the data set
+  prop.trx.resp.empir = data %>% filter(tx==1) %>% summarise(resp.prop = mean(outcome)) %>% unlist()
+  prop.ctl.resp.empir = data %>% filter(tx==0) %>% summarise(resp.prop = mean(outcome)) %>% unlist()
+  prop.diff.resp.empir = prop.trx.resp.empir - prop.ctl.resp.empir
+  return(prop.diff.resp.empir)
+ }
+```
+
+2.
+```{r function to take in randomization function and estiamte treatment effect, echo=TRUE, eval=FALSE}
+randomize.treatment.effect.fn=function(data, Sscore.fn){
+    
+  dt = apply(X = data, MARGIN = 1, FUN = function(x){
+    p.new = Sscore.fn(x[1]) # based on calc.prop, get a pnew based on the S_Score for this individual
+    x.new = x %>% mutate(tx.mut = sample(x = c(0,1), size = 1, replace = TRUE, prob = c(1-p.new, p.new))) # based on this new pnew, assign the individual to trx or ctl
+    return(x.new) # return the vector which now includes the new treatment assignment
+    })
+  
+  # Calculate the empirical difference in the response proportion for the data set
+  prop.trx.resp = dt %>% filter(tx.mut==1) %>% summarise(resp.prop = mean(outcome)) %>% unlist()
+  prop.ctl.resp = dt %>% filter(tx.mut==0) %>% summarise(resp.prop = mean(outcome)) %>% unlist()
+  prop.diff.resp = prop.trx.resp - prop.ctl.resp
+  return(prop.diff.resp.empir)
+}
+
+randomization.treatment.effect = randomize.treatment.effect.fn(data, calc.prob)
+```
+
+3.
+```{r re-randomization function, echo=TRUE, eval=FALSE}
+rerand.prop_resp.fn = function(data, PNEW.S_lo, PNEW.S_hi){
+  # Reassign treatment group using original probabilities
+  dt = apply(X = data, MARGIN = 1, FUN = function(x){
+    Sscore = x[1]
+    if(Sscore<=0.5){
+      tx.new = sample(x = c(0,1), size = 1, replace = TRUE, prob = c(1-PNEW.S_lo, PNEW.S_lo))
+    }
+    else if (Sscore>0.5){
+      tx.new = sample(x = c(0,1), size = 1, replace = TRUE, prob = c(1-PNEW.S_hi, PNEW.S_hi))
+    }
+    return(c(x,tx.new)) # return the vector which now includes the new treatment assignment
+    })
+  
+  # New Data table with new treatment assignments
+  dt = as.data.table(t(dt))
+  colnames(dt)[4] <- "tx.new"
+  
+  # Calculate the empirical difference in the response proportion for the data set
+  prop.trx.resp = dt %>% filter(tx.new==1) %>% summarise(resp.prop = mean(outcome)) %>% unlist()
+  prop.ctl.resp = dt %>% filter(tx.new==0) %>% summarise(resp.prop = mean(outcome)) %>% unlist()
+  prop.diff.resp = prop.trx.resp - prop.ctl.resp
+  return(prop.diff.resp)
+}
+
+vc = replicate(n = 1000, expr = rerand.prop_resp.fn(data, PNEW.S_lo = 0.75, PNEW.S_hi = 0.25))
+pval = mean(vc >= prop.diff.resp.empir)
+```
+
+4.
+Samples were re-randomized with pnew <- 1 - S. After rerandomization, I calculated the mean outcome for those on the new treatment, and for those on the control treatment. I then calculated the difference in these proportions. I repreated this rereandomization 1000x, and compared the distribution of differences in outcome porportion to the empirical data to get a p-value. The p-value is not less than 0.05, and so we fail to reject the null hypothesis that the new treatment is not better than the control treatment.
+```{r}
+rerand2.prop_resp.fn = function(data){
+  # Reassign treatment group using original probabilities
+  dt = apply(X = data, MARGIN = 1, FUN = function(x){
+    Sscore = x[1]
+    tx.new = sample(x = c(0,1), size = 1, replace = TRUE, prob = c(1-(1-Sscore), 1-Sscore))
+    
+    return(c(x,tx.new)) # return the vector which now includes the new treatment assignment
+    })
+  
+  # New Data table with new treatment assignments
+  dt = as.data.table(t(dt))
+  colnames(dt)[4] <- "tx.new"
+  
+  # Calculate the empirical difference in the response proportion for the data set
+  prop.trx.resp = dt %>% filter(tx.new==1) %>% summarise(resp.prop = mean(outcome)) %>% unlist()
+  prop.ctl.resp = dt %>% filter(tx.new==0) %>% summarise(resp.prop = mean(outcome)) %>% unlist()
+  prop.diff.resp = prop.trx.resp - prop.ctl.resp
+  return(prop.diff.resp)
+}
+
+
+empirical.resp.diff = treatment.effect.fn(data = example_trial)
+rerand.resp.diff =  replicate(n = 1000, expr = rerand2.prop_resp.fn(example_trial))
+pval = mean(rerand.resp.diff >= empirical.resp.diff)
+pval
+```
+
+5.
+Rerandomizing using simple randomization gives a much lower p-value than if you used a rerandomization method that matches the original treatment_group assignment.
+```{r simple rerandomization}
+rerand.simple.prop_resp.fn = function(data){
+  # Reassign treatment group using original probabilities
+  dt = data %>% mutate(tx.new = sample(x=c(0,1), size=nrow(data), replace=TRUE))
+  
+  # Calculate the empirical difference in the response proportion for the data set
+  prop.trx.resp = dt %>% filter(tx.new==1) %>% summarise(resp.prop = mean(outcome)) %>% unlist()
+  prop.ctl.resp = dt %>% filter(tx.new==0) %>% summarise(resp.prop = mean(outcome)) %>% unlist()
+  prop.diff.resp = prop.trx.resp - prop.ctl.resp
+  return(prop.diff.resp)
+}
+
+
+empirical.resp.diff = treatment.effect.fn(data = example_trial)
+rerand.simple.resp.diff =  replicate(n = 1000, expr = rerand.simple.prop_resp.fn(example_trial))
+pval = mean(rerand.simple.resp.diff >= empirical.resp.diff)
+pval
+```
+
+
+6.
+
+
+
+
+#######################################################
+#######################################################
+```{r bootstrap function}
+boostrap.prop_resp.fn = function(data, PNEW.S_lo, PNEW.S_hi){
+  # Perform bootstrap resampling of the original data set
+  sample.inds = sample(1:nrow(data), replace=TRUE)
+  
+  # Reassign trx/ctl status, if S <= 0.5, PNEW=0.75 ; if S > 0.5, PNEW=0.25
+  PNEW.Slo = PNEW.S_lo
+  PNEW.Shi = PNEW.S_hi
+  dt.Slo = data[sample.inds] %>% filter(score<=0.5) %>% mutate(tx.mut = sample(x = c(0,1), size = nrow(filter(data[sample.inds], score<=0.5)), replace = TRUE, prob = c(1-PNEW.Slo, PNEW.Slo)))
+  dt.Shi = data[sample.inds] %>% filter(score>0.5) %>% mutate(tx.mut = sample(x = c(0,1), size = nrow(filter(data[sample.inds], score>0.5)), replace = TRUE, prob = c(1-PNEW.Shi, PNEW.Shi)))
+  dt = rbind(dt.Slo, dt.Shi)
+ 
+ prop.trx.resp.boot = dt %>% filter(tx.mut==1) %>% summarise(resp.prop = mean(outcome)) %>% unlist()
+ prop.ctl.resp.boot = dt %>% filter(tx.mut==0) %>% summarise(resp.prop = mean(outcome)) %>% unlist()
+ prop.diff.resp.boot = prop.trx.resp.boot - prop.ctl.resp.boot
+ return(prop.diff.resp.boot)
+}
+
+
+random.bootstrap.fn=function(data, n.reps, PNEW.S_lo, PNEW.S_hi){
+  # Calculate the empirical difference in the response proportion for the data set
+  prop.trx.resp.empir = data %>% filter(tx==1) %>% summarise(resp.prop = mean(outcome)) %>% unlist()
+  prop.ctl.resp.empir = data %>% filter(tx==0) %>% summarise(resp.prop = mean(outcome)) %>% unlist()
+  prop.diff.resp.empir = prop.trx.resp.empir - prop.ctl.resp.empir
+  
+  bs.pr = replicate(n = n.reps, expr = boostrap.prop_resp.fn(data, PNEW.S_lo, PNEW.S_hi))
+  
+  pval = mean(bs.pr >= prop.diff.resp.empir)
+  return(pval)
+ 
+}
+
+
+random.bootstrap.fn(data = example_trial, n.reps = 1000, PNEW.S_lo = 0.75, PNEW.S_hi = 0.25)
+
+```
+

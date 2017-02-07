@@ -1,0 +1,23 @@
+binary outcome —> difference proportion of individuals with outcome
+
+warm-up exercise:
+1) re-randomization within hospital groups,
+measure difference between trx and placebo as difference in proportion success_trx, proportion success_placebo —> difference in proportions
+combine across all 10 hospitals by taking the mean/median of these differences in proportions
+
+2) proportion of success for treatment v. control over all hospitals ; difference of overall proportions
+almost like we just have 10 observations, and outcome goes from being dichotomous (success v. failure) and becomes “continuour” (proportion of success)
+for entire hospital groups (all 10 individuals) shuffle label from treatment to control. —> i.e. swap hospital labels for groups of 10.
+	shufffling hospital lables will increase the size of the distribution of test statistic, since a hospital that is really good will swing the data significantly depending if it is in the treatment or control label.
+
+3) Adaptive clinical trial designs
+### Rerandomize according to the scheme that samples were individually randomized  ###
+
+LECTURE
+difference in proportions of outcome for treatment and placebo, example of association
+
+assessing correlation/independence of variables/measure (measure1 v. measure2) —> randomize/shuffle for an outcome, recalculate correlation between measure1 and measure2
+
+compare how accurate predictions are when using a linear model that is based on only the mean of one measure, or all the data of the seocnd measure. Does including the additional data (measure2), improve the ability to predict value of measure1.
+
+what to do with binary data? logistic regression, windowed comparisons, boxplotting 

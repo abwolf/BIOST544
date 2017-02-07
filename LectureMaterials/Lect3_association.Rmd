@@ -1,0 +1,179 @@
+---
+title: "Lecture 3 Example"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(digits = 3) ## Formats output to 3 digits
+library(ggplot2)
+library(dplyr)
+
+setwd("~/Documents/Dropbox/2016:2017/BIOST544/") ## Set this to your own working directory
+
+set.seed(1)
+```
+
+## Reminder
+To get markdown to work remember: Install the newest version of **R**!
+
+## Data Analysis
+
+We will now start analyzing the subset of the Neoadjuvant Herceptin [NOAH] trial data available on GEO (at GSE50948). This is a trial evaluating the efficacy of Herceptin (an anti-HER2 agent) + chemo vs chemo alone in treating HER2+ breast cancer. We will start with a slightly curated version of the data that I created --- I split up the biomolecular (gene expression) and clinical data. In this lecture we will only work with the clinical data. In this trial the outcome we will work with is \emph{pathologic complete response} (PCR), absence of residual invasive tumor in the breast and axillary lymph node after treatment. Event-free-survival was also recorded and used in the original analysis of the NOAH trial; but it was not made available on GEO.
+
+We are now interested in looking at associations between various clinical features; and between those features and outcome. It will additionally be of interest to see if those associations/relationships are different among our different treatment groups. 
+
+We will first look at the potential association between age and survival.
+
+
+```{r linear_est, message=FALSE, error=FALSE}
+NOAH <- read.csv('~/Documents/Dropbox/2016:2017/BIOST544/Data/clinical_data.csv', header = TRUE)[,-1] ## The first column is just the identifiers 1,2,..., so we discard it
+
+names(NOAH)
+```
+
+We will first look at the status of two quantitative biomarkers: Estrogen Receptor expression (`er.ct`), Progesterone Receptor expression (`pr.ct`). We notice that these are not "numeric" variables (but rather were read in as factors), so we recode them, and the plot them.
+
+```{r univ_plot}
+NOAH$er.ct <- as.numeric(NOAH$er.ct)
+NOAH$pr.ct <- as.numeric(NOAH$pr.ct)
+
+NOAH.non3n <- NOAH %>% filter(er.ct > 10, her2.ct > 10, pr.ct > 10)
+
+ggplot(NOAH.non3n, aes(x=er.ct, y=..density..)) + 
+  geom_density() + 
+  ggtitle("ER count density")
+
+ggplot(NOAH.non3n, aes(x=pr.ct, y=..density..)) + 
+  geom_density() + 
+  ggtitle("PR count density")
+
+```
+
+Now let us plot `er.ct` against `pr.ct`:
+
+```{r polynomial_est}
+
+ggplot(NOAH.non3n, aes(x = er.ct, y = pr.ct)) + 
+  geom_point() + 
+  geom_smooth(method = "lm", se = FALSE)
+
+ggplot(NOAH.non3n, aes(x = er.ct, y = pr.ct)) + 
+  geom_point() + 
+  geom_smooth(method = "lm", formula = y ~ poly(x,4))
+```
+
+Or just fit a general smoother
+
+```{r smooth_est}
+ggplot(NOAH.non3n, aes(x = er.ct, y = pr.ct)) + 
+  geom_point() + 
+  geom_smooth()
+```
+
+Here we can see that most of the data follows a smooth increasing trend, with some highly variable points. Perhaps only a subset of points follow the trend line (characterizing that subset may be difficult though).
+
+<!-- !!!!!!!!!!! PAUSE !!!!!!!!!!!!! --> 
+
+One might also want to quantify the degree of association. [Pearson] correlation is one way to do this, but it only works for linear association. To evaluate monotonic, but non-linear relationships one might use \emph{spearman} correlation.
+
+```{r numeric-value}
+
+with(NOAH.non3n,
+     cor.test(as.numeric(er.ct), as.numeric(pr.ct)))
+
+with(NOAH.non3n,
+     cor.test(as.numeric(er.ct), as.numeric(pr.ct), method = "spearman"))
+```
+
+There is a more generic way of evaluating assocation however. That is to quantify the ability of `er.ct` to predict `pr.ct`.
+
+Without `er.ct` one would predict `pr.ct` with an "average" value (eg the mean or possibly median of `pr.ct`). With `er.ct`, one would use the predictive line from one of the previous plots.
+
+To quantify the ability of `er.ct` to predict `pr.ct` we compare the accuracy of predictions without `er.ct` to the accuracy of predictions with `pr.ct`. There are a number of ways to characterize the "accuracy of predictions" --- one such characterization is the average amount that a prediction "misses by" (in absolute value); or one could use the average, squared amount that a prediction misses by (known as mean-squared error).
+
+Let's try that on the NOAH trial data, with our linear fit
+
+```{r linear_association}
+fit.null <- lm(as.numeric(pr.ct) ~ 1, data = NOAH.non3n)
+fit.er <- lm(as.numeric(pr.ct) ~ as.numeric(er.ct), data = NOAH.non3n)
+
+resids.null <- as.numeric(NOAH.non3n$pr.ct) - predict(fit.null)
+resids.er <- as.numeric(NOAH.non3n$pr.ct) - predict(fit.er)
+
+(MSE.ratio <- mean(resids.er^2)/mean(resids.null^2))
+(MAD.ratio <- mean(abs(resids.er))/mean(abs(resids.null)))
+```
+
+We can apply this with our non-linear smoother
+
+```{r nonlinear_association}
+fit.er.smooth <- loess(as.numeric(pr.ct) ~ as.numeric(er.ct), data = NOAH.non3n)
+
+resids.er.smooth <- as.numeric(NOAH.non3n$pr.ct) - predict(fit.er.smooth)
+
+(MSE.ratio <- mean(resids.er.smooth^2)/mean(resids.null^2))
+(MAD.ratio <- mean(abs(resids.er.smooth))/mean(abs(resids.null)))
+
+1 - MSE.ratio
+1 - MAD.ratio
+```
+
+How might we evaluate if this value is "large" (or larger than one might expect due to chance if there were really no assocation?)
+
+<!-- !!!!!!!!!!! PAUSE !!!!!!!!!!!!! --> 
+
+## Association Between Continuous Feature and Binary Outcome
+
+One might consider if our HER2 biomarker is associated with improved treatment (especially on our trastuzumab arm). We can make the same plot as before, only now our outcome is a binary variable.
+
+```{r binary_assoc}
+NOAH.non3n.num <- NOAH.non3n %>% 
+  mutate(pcr.num = ifelse(as.character(pcr) =="pCR", 1, 0))
+
+NOAH.non3n.num %>%
+  ggplot(aes(x = as.numeric(her2.ct), y = pcr.num)) + 
+    geom_point()
+```
+
+Wow... that was uninformative... When our outcome is binary, we really need a smoother! Let's try that again.
+
+```{r binary_assoc_smooth}
+
+NOAH.non3n.num %>%
+  ggplot(aes(x = as.numeric(her2.ct), y = pcr.num)) + 
+    geom_point() + 
+    geom_smooth()
+```
+
+Now it might be informative to see if this is different between the treatment arms. That would help us determine if this biomarker could inform which patients should/should not get treatment!
+
+First though, treatment has a very long name, so let's shorten it!
+
+```{r binary_assoc_by_T}
+NOAH.non3n.shortT <- NOAH.non3n.num %>% 
+  mutate(shortT = ifelse(treatment == unique(treatment)[2], 1, 0))
+print(unique(NOAH.non3n$treatment)[2])
+
+NOAH.non3n.shortT %>%
+  ggplot(aes(x = as.numeric(her2.ct), y = pcr.num, color = as.factor(shortT))) + 
+    geom_point() + 
+    geom_smooth(method = "lm")
+
+NOAH.non3n.shortT %>%
+  ggplot(aes(x = as.numeric(her2.ct), y = pcr.num, color = as.factor(shortT))) + 
+    geom_point() + 
+    geom_smooth()
+
+```
+
+We could also consider this in reverse! If instead we use`pcr` as our predictor, and `her2.ct` as our response, we can see how HER2 expression differs between responders and non-responders. Let's try that!
+
+```{r reverse}
+NOAH.non3n.shortT %>% filter(shortT == 1) %>%
+  ggplot(aes(x = pcr, y = her2.ct)) + geom_boxplot()
+```
+
+Curiously enough, this says that among HER2 expressors treated with Trastuzumab; if there is any trend it appears to be that lower HER2 expression has a more favorable response profile.
+
+How would we do this with a general categorical feature? Which way would the regression go?

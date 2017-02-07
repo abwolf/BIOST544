@@ -1,0 +1,50 @@
+over-optimism —> multiple testing, over-fitting, —> sample splitting (training & validation)
+complexity of the model —> linear v. polynomial,
+how much complexity can our data support? —> more complexity is not always better.
+	2 parts:
+	1) how complex is our function
+	2) how much data o we have —> even with a complex underlying function, if we don’t have enough data, it will be difficult to fit the correct function
+
+derived/meta-features
+Focusing today on the question: Does some combination of features predict outcome effectively?
+	—> linear/non-linear comibination of predictors
+	—> useful for predicting outcome, but difficult to parse out effects of individual variables
+
+simpe way to combine features to predict outcome —> Multiple Linear Regression
+	choose B to minimize difference between prediction and actual outcome (MSE)
+
+non-linear fits from linear regression
+important in observational data to reduce the effect of confounding
+BEGIN BY THINKING DEEPLY ABOUT POSSIBLE CONFOUNDING BEFORE MODELING
+
+More Flexible predictive models —> one feature case
+	-local smoothing
+	-meta-feature construction, polynomial functions create “meta-features” by raising feature x to various powers, allows for new Bs, —> this lis like doig multiple regression on new features (even though we only have 1 feature)
+
+	Meta-feature expansions
+		poynomial expansion/basis
+		hockey-stick/split expansion
+
+More Flexible predictive models —> multiple feature case
+	-for local smoothing need new distance measure for multivariate x
+		this becomes very hard for higher dimensional problems —> too felxible —> distances interfere with eachother
+	-meta-features
+		additive
+		interacting
+Feature selection
+	Complexity related to 1) Number of Bs, 2) Size of Bs
+			Large number of very large-valued Bs is a very complex model
+	Best Subset Selection —> for k B, limit number of non-zero B to c<k. (difficult if K is large)
+	Lasso regression —> aim to minimize all B, and add penalty term for increasing the number (c) of B and the size of B, so that c<k and B are kept minimal in size (if not made 0). —> penalty term limits complexity of function. —> assigns most B as 0. —> you can modulate the penalty term (lambda) to adjust how much you want to avoid complexity.
+		How do we choose lambad? —> cross-validation approaches, Leave-One-Out-CV
+	Ridge Regression
+
+Combining Feature Expansion and Feature Selection
+	1) grow our set by creating meta-features
+	2) Then select useful metafeatures by using a Lasso fit
+	# Often an effective stratgey in text mining, when number of features may be small
+
+
+Most important to appropriately tune parameters/depth/complexity with CV, than to obssess about correct method (regression tree v. Lasso v. linear regression).
+
+####Predictive model of deser v. non-desert bases?

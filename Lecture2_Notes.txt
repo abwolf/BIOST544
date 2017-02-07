@@ -1,0 +1,11 @@
+Biost544 Lecture 2
+
+Simulation of data using distribution probability values for Treatment and Contro responses.
+
+How do you account for uncertainty in estimation of response proability in control group?
+
+Check if piC is less than or equal to piT ; simulate with this pair of pi, and see if the simulated data is consistent with the data —> or MOST consisdtent with the data
+
+find most consisten values where piT < piC ; the measured proportions do not satisfy this statement
+
+The simplest instance where “response prob on treatment (piT) is no greater that response probability on control (piC)” is the case where piT=piC. —> Given a situtation where this is true (piT=piC), and we have an observed dataset where piT>piC ; how likely is it that what we observed is consistent with the null distribution, i.e. is it an expected fluke/randomness is the data, or does it represent something special and meaningfull —> is the obsrved data significantly different from the expected null.
